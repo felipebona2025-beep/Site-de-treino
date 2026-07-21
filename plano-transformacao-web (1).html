@@ -572,7 +572,8 @@ h2.onb-title{font-size:30px;font-weight:800;}
 .micro-line b{color:var(--ink);font-family:'Archivo';}
 .micro-line svg{color:var(--volt-deep);}
 .meal-add-row{display:flex;gap:8px;margin-top:10px;}
-.meal-add-row .add-line{margin-top:0;}
+.meal-add-row .add-line{margin-top:0;width:auto;min-width:0;}
+.meal-add-row .add-line.primary{flex:1;}
 .add-line.primary{flex:1;border:none;background:var(--ink);color:#fff;font-weight:700;}
 .add-line.primary:hover{background:#000;color:#fff;}
 .meal-add-row .add-line:not(.primary){flex:0 0 auto;padding-left:16px;padding-right:16px;}
