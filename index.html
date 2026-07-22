@@ -627,6 +627,8 @@ h2.onb-title{font-size:30px;font-weight:800;}
 .btn.sm{padding:8px 14px;font-size:13px;}
 @media(max-width:520px){.nut-grid{grid-template-columns:repeat(2,1fr);}.azd-controls{flex-direction:column;}}
 
+.login-avatar{width:66px;height:66px;border-radius:50%;background:var(--volt);color:var(--ink);display:grid;place-items:center;font-family:'Archivo';font-weight:800;font-size:26px;margin:0 auto 4px;box-shadow:0 10px 24px -10px rgba(201,247,59,.7);}
+
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 </style>
 </head>
@@ -869,6 +871,8 @@ const STORE=(()=>{
   };
 })();
 const SESSION_KEY='transform:session';
+const AUTH_KEY='transform:authed';
+function setAuthed(v){try{STORE.set(AUTH_KEY,v?'1':'0');}catch(e){}}
 let _saveT=null;
 function saveSession(){if(!S.user)return;clearTimeout(_saveT);_saveT=setTimeout(doSave,450);}
 async function doSave(){
@@ -956,6 +960,7 @@ function render(){
   if(S.screen==='goal')return renderGoal();
   if(S.screen==='quiz')return renderQuiz();
   if(S.screen==='generating')return renderGenerating();
+  if(S.screen==='login')return renderLogin();
   if(S.screen==='account')return renderAccount();
   if(S.screen==='app')return renderApp();
 }
@@ -1131,15 +1136,44 @@ function finalizeAccount(user){
   S.user=user;
   if(S.answers && user.name && !S.answers.name) S.answers.name=user.name;
   closeModal();
-  doSave();
+  doSave(); setAuthed(true);
   S.screen='app'; S.tab='home'; render();
   toast('Conta criada! Seu plano foi salvo com sucesso.','checkCircle');
 }
+function renderLogin(){
+  const u=S.user||{}; const first=(u.name||'').trim().split(' ')[0];
+  mount(`<div class="onb">
+    <div class="onb-nav"><div class="brand"><span class="brand-mark">${ic('zap',18)}</span> NutriCoach AI</div></div>
+    <div class="onb-body"><div class="onb-card auth-card" style="text-align:center">
+      <div class="login-avatar">${u.provider==='google'?googleLogo(24):esc((u.name||'U').trim().charAt(0).toUpperCase()||'U')}</div>
+      <h2 class="onb-title" style="text-align:center">Bem-vindo de volta${first?', '+esc(first):''}!</h2>
+      <p class="section-lead" style="text-align:center;margin:8px auto 22px">Sua conta e todo o seu progresso continuam salvos — dieta, treinos, peso e medidas. Entre para retomar de onde parou.</p>
+      <button class="btn btn-primary lg" style="width:100%" data-action="login">Entrar na minha conta ${ic('arrowR',18)}</button>
+      <button class="btn btn-secondary lg" style="width:100%;margin-top:10px" data-action="new-account">Criar uma nova conta</button>
+      ${u.email?`<p class="auth-disc">${esc(u.email)}</p>`:''}
+    </div></div>
+  </div>`);
+}
+function modalConfirmReset(){
+  return `<div class="modal-card"><button class="modal-x" data-action="modal-close">${ic('x',18)}</button>
+   <div class="modal-pad"><h3 class="analyze-dish">Criar nova conta?</h3>
+   <p class="analyze-items">Isto apaga a conta atual e todo o progresso salvo (dieta, treinos, peso, medidas e preferências). Essa ação não pode ser desfeita.</p>
+   <div class="modal-actions"><button class="btn btn-secondary" data-action="modal-close">Cancelar</button><button class="btn btn-primary" data-action="reset-confirm">Apagar e recomeçar</button></div>
+   </div></div>`;
+}
+function login(){
+  closeModal(); setAuthed(true);
+  S.screen='app'; S.tab='home'; render();
+  toast('Bem-vindo de volta!','checkCircle');
+}
 async function signout(){
-  await STORE.del(SESSION_KEY);
-  resetState();
+  setAuthed(false);
   closeModal();
-  render();
+  S.screen='login'; render();
+}
+async function resetAccount(){
+  await STORE.del(SESSION_KEY); await STORE.del(AUTH_KEY);
+  resetState(); closeModal(); render();
 }
 
 /* ============================================================
@@ -2007,6 +2041,9 @@ document.addEventListener('click',e=>{
     return finalizeAccount({name:name||email.split('@')[0],email,provider:'email'});
   }
   if(act==='signout'){return signout();}
+  if(act==='login'){return login();}
+  if(act==='new-account'){return openModal(modalConfirmReset());}
+  if(act==='reset-confirm'){return resetAccount();}
   // ----- DIETA editável -----
   if(act==='meal-add'){S._edit={};return openModal(modalMealEditor(null));}
   if(act==='meal-edit'){S._edit={mealId:t.getAttribute('data-meal')};return openModal(modalMealEditor(findMeal(S._edit.mealId)));}
@@ -2059,7 +2096,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').classLi
 
 (async()=>{
   const ok=await loadSession();
-  if(ok){S.screen='app';S.tab='home';}
+  if(ok){
+    const a=await STORE.get(AUTH_KEY);
+    S.screen=(a==='0')?'login':'app';
+    S.tab='home';
+  }
   render();
 })();
 
