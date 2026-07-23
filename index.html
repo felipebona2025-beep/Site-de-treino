@@ -15,6 +15,7 @@
 <meta property="og:title" content="NutriCoach AI" />
 <meta property="og:description" content="Seu coach de nutrição e treinos com IA — plano alimentar e treinos personalizados e editáveis." />
 <meta name="twitter:card" content="summary_large_image" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" data-supa="1"></script>
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="icon.svg" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiI+CiAgPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMTYiIGZpbGw9IiMxNDE2MUMiLz4KICA8cGF0aCBkPSJNMzAwIDkyIDE2OCAzMDBoODZsLTI2IDEzMCAxMzgtMjA0aC05MnoiIGZpbGw9IiNDOUY3M0IiIHN0cm9rZT0iI0M5RjczQiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=" />
@@ -628,6 +629,17 @@ h2.onb-title{font-size:30px;font-weight:800;}
 @media(max-width:520px){.nut-grid{grid-template-columns:repeat(2,1fr);}.azd-controls{flex-direction:column;}}
 
 .login-avatar{width:66px;height:66px;border-radius:50%;background:var(--volt);color:var(--ink);display:grid;place-items:center;font-family:'Archivo';font-weight:800;font-size:26px;margin:0 auto 4px;box-shadow:0 10px 24px -10px rgba(201,247,59,.7);}
+.btn-ghost-light{background:rgba(255,255,255,.08);color:#EDEFF3;border:1px solid rgba(255,255,255,.22);}
+.btn-ghost-light:hover{background:rgba(255,255,255,.16);}
+
+.diag{display:flex;flex-direction:column;gap:10px;margin:14px 0 4px;}
+.diag-row{display:flex;gap:9px;align-items:flex-start;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.45;text-align:left;}
+.diag-row svg{flex-shrink:0;margin-top:1px;}
+.diag-row.x{border-color:var(--ember);}
+.diag-row.x svg{color:var(--ember);}
+.diag-row.check{border-color:var(--volt-deep);}
+.diag-row.check svg{color:var(--volt-deep);}
+.diag-row.info svg{color:var(--muted);}
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 </style>
@@ -873,6 +885,197 @@ const STORE=(()=>{
 const SESSION_KEY='transform:session';
 const AUTH_KEY='transform:authed';
 function setAuthed(v){try{STORE.set(AUTH_KEY,v?'1':'0');}catch(e){}}
+
+/* ============================================================
+   SUPABASE — autenticação + sincronização na nuvem
+   ------------------------------------------------------------
+   >>> PREENCHA A URL DO SEU PROJETO ABAIXO <<<
+   Encontre em: Supabase → Project Settings → Data API → Project URL
+   Formato: https://xxxxxxxxxxxx.supabase.co
+
+   A chave abaixo é a PUBLISHABLE (anon). Ela pode ficar no
+   navegador — quem protege os dados é a sua RLS.
+   NUNCA coloque aqui uma chave "sb_secret_..." (ela ignora RLS).
+   ============================================================ */
+const SUPABASE_URL='https://wstpwwkloaevgqnyazcp.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_YjuqFhGAwhXFI6sPbA9Vlg_K807m49H';
+const SUPABASE_CDN='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+const PHOTO_BUCKET='progress-photos';
+
+const SB={client:null,user:null,ready:false};
+function supaConfigured(){return /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)/i.test(SUPABASE_URL)&&!/SEU-PROJETO/i.test(SUPABASE_URL);}
+function cloudOn(){return !!(SB.ready&&SB.client&&SB.user);}
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    if(typeof document==='undefined')return rej(new Error('sem document'));
+    const ex=document.querySelector('script[data-supa]'); if(ex){ex.addEventListener('load',()=>res());ex.addEventListener('error',()=>rej(new Error('erro')));return;}
+    const s=document.createElement('script'); s.src=src; s.async=true; s.setAttribute('data-supa','1');
+    s.onload=()=>res(); s.onerror=()=>rej(new Error('falha ao carregar o SDK'));
+    document.head.appendChild(s);
+    setTimeout(()=>rej(new Error('timeout do SDK')),9000);
+  });
+}
+async function initSupabase(){
+  if(SB.ready)return SB.client;
+  if(!supaConfigured())return null;
+  try{
+    if(!(window.supabase&&window.supabase.createClient))await loadScript(SUPABASE_CDN);
+    if(!(window.supabase&&window.supabase.createClient))throw new Error('SDK indisponível');
+    SB.client=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    SB.ready=true;
+    return SB.client;
+  }catch(e){console.warn('[Supabase] indisponível, usando armazenamento local:',e.message);return null;}
+}
+/* executa uma query tolerando ausência de coluna/tabela (nunca quebra a UI) */
+async function sbTry(fn,label){
+  try{const r=await fn();if(r&&r.error)throw r.error;return r?r.data:null;}
+  catch(e){console.warn('[Supabase] '+(label||'query')+':',e.message||e);return null;}
+}
+function todayISO(){return new Date().toISOString().slice(0,10);}
+
+/* ---------- AUTENTICAÇÃO ---------- */
+function cloudDownMsg(){return supaConfigured()?'Não foi possível conectar ao servidor. Verifique sua conexão e tente de novo.':'Nuvem não configurada — informe a URL do projeto.';}
+async function cloudSignUp(email,password,name){
+  const c=await initSupabase(); if(!c)return {ok:false,msg:cloudDownMsg()};
+  const {data,error}=await c.auth.signUp({email,password,options:{data:{name:name||''}}});
+  if(error)return {ok:false,msg:authMsg(error.message)};
+  if(!data.session)return {ok:false,msg:'Confirme o e-mail que enviamos para ativar sua conta.',pending:true};
+  SB.user=data.user; return {ok:true,user:data.user};
+}
+async function cloudSignIn(email,password){
+  const c=await initSupabase(); if(!c)return {ok:false,msg:cloudDownMsg()};
+  const {data,error}=await c.auth.signInWithPassword({email,password});
+  if(error)return {ok:false,msg:authMsg(error.message)};
+  SB.user=data.user; return {ok:true,user:data.user};
+}
+async function cloudSignOut(){try{if(SB.client)await SB.client.auth.signOut();}catch(e){}SB.user=null;}
+async function cloudRestore(){
+  const c=await initSupabase(); if(!c)return false;
+  const {data}=await c.auth.getSession();
+  if(data&&data.session&&data.session.user){SB.user=data.session.user;return true;}
+  return false;
+}
+function authMsg(m){
+  m=String(m||'');
+  if(/Failed to fetch|NetworkError|Load failed|fetch failed/i.test(m))return 'Não foi possível falar com o servidor.';
+  if(/Invalid login/i.test(m))return 'E-mail ou senha incorretos.';
+  if(/already registered|already exists/i.test(m))return 'Este e-mail já tem conta. Faça login.';
+  if(/at least 6/i.test(m))return 'A senha precisa ter ao menos 6 caracteres.';
+  if(/Email not confirmed/i.test(m))return 'Confirme seu e-mail antes de entrar.';
+  return m;
+}
+function isNetErr(m){return /Não foi possível falar com o servidor|conectar ao servidor/i.test(String(m||''));}
+async function cloudDiagnose(){
+  const out=[];
+  let localFile=false;
+  try{localFile=!/^https?:$/.test(location.protocol);}catch(e){}
+  if(localFile)out.push(['x','Você abriu o arquivo direto do computador (<b>file://</b>). Nesse modo o navegador bloqueia a conexão com o Supabase. Publique no Netlify (https) para funcionar.']);
+  try{
+    const r=await fetch(SUPABASE_URL+'/auth/v1/health',{headers:{apikey:SUPABASE_PUBLISHABLE_KEY}});
+    if(r.status===401||r.status===403)out.push(['x','O servidor respondeu, mas <b>recusou a chave</b> (HTTP '+r.status+'). Confira a chave publishable/anon no painel.']);
+    else if(!r.ok)out.push(['x','O servidor respondeu com <b>HTTP '+r.status+'</b>.']);
+    else out.push(['check','Conexão com o Supabase <b>OK</b> — o problema está no login, não na rede.']);
+  }catch(e){
+    if(!localFile)out.push(['x','Não foi possível alcançar <b>'+esc(SUPABASE_URL)+'</b>.']);
+    out.push(['info','Causas mais comuns: <b>projeto pausado</b> no Supabase (plano free pausa após inatividade), URL do projeto incorreta, bloqueador de anúncios/extensão, ou sem internet.']);
+  }
+  return out;
+}
+function modalCloudError(lines){
+  return `<div class="modal-card"><button class="modal-x" data-action="modal-close">${ic('x',18)}</button>
+   <div class="modal-pad"><h3 class="analyze-dish">Não consegui conectar</h3>
+   <p class="analyze-items">Diagnóstico da conexão com o servidor:</p>
+   <div class="diag">${lines.map(l=>`<div class="diag-row ${l[0]}">${ic(l[0]==='check'?'checkCircle':l[0]==='info'?'info':'x',16)}<span>${l[1]}</span></div>`).join('')}</div>
+   <div class="modal-actions"><button class="btn btn-primary" data-action="modal-close">Entendi</button></div>
+   </div></div>`;
+}
+async function showCloudError(){openModal(modalCloudError(await cloudDiagnose()));}
+
+/* ---------- ESCRITA NA NUVEM ---------- */
+async function cloudPushProfile(){
+  if(!cloudOn())return;
+  await sbTry(()=>SB.client.from('profiles').upsert({
+    id:SB.user.id, email:SB.user.email, name:(S.user&&S.user.name)||'',
+    goal_key:S.goalKey, answers:S.answers,
+    tracking:{current:S.current,weightLog:S.weightLog,streak:S.streak,water:S.water,tasks:S.tasks,badges:S.badges,measures:S.measures,planDay:S.planDay,foodLog:S.foodLog.map(f=>Object.assign({},f,{url:null}))},
+    food_db:S.foodDB, photos:S.photos, updated_at:new Date().toISOString()
+  },{onConflict:'id'}),'upsert profiles');
+}
+async function cloudPushPlan(){
+  if(!cloudOn()||!S.plan)return;
+  await sbTry(()=>SB.client.from('user_plans').upsert({
+    user_id:SB.user.id, plan:S.plan, meal_plan:S.mealPlan, week:S.week, updated_at:new Date().toISOString()
+  },{onConflict:'user_id'}),'upsert user_plans');
+}
+async function cloudLogWeight(v){
+  if(!cloudOn())return;
+  await sbTry(()=>SB.client.from('weight_logs').insert({user_id:SB.user.id,weight:v,logged_at:new Date().toISOString()}),'insert weight_logs');
+}
+async function cloudLogWater(glasses){
+  if(!cloudOn())return;
+  const row={user_id:SB.user.id,glasses,log_date:todayISO()};
+  const up=await sbTry(()=>SB.client.from('water_logs').upsert(row,{onConflict:'user_id,log_date'}),'upsert water_logs');
+  if(up===null)await sbTry(()=>SB.client.from('water_logs').insert(row),'insert water_logs');
+}
+async function cloudUploadPhoto(file){
+  if(!cloudOn())return null;
+  try{
+    const ext=(file.name||'foto.jpg').split('.').pop().toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+    const path=SB.user.id+'/'+Date.now()+'.'+ext;
+    const {error}=await SB.client.storage.from(PHOTO_BUCKET).upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});
+    if(error)throw error;
+    const {data}=SB.client.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+    return (data&&data.publicUrl)||null;
+  }catch(e){console.warn('[Supabase] upload da foto:',e.message||e);return null;}
+}
+
+/* ---------- LEITURA DA NUVEM ---------- */
+async function cloudPull(){
+  if(!cloudOn())return false;
+  const uid=SB.user.id;
+  const prof=await sbTry(()=>SB.client.from('profiles').select('*').eq('id',uid).maybeSingle(),'select profiles');
+  let plans=await sbTry(()=>SB.client.from('user_plans').select('*').eq('user_id',uid).order('updated_at',{ascending:false}).limit(1),'select user_plans');
+  if(plans===null)plans=await sbTry(()=>SB.client.from('user_plans').select('*').eq('user_id',uid).limit(1),'select user_plans (sem order)');
+  const planRow=plans&&plans.length?plans[0]:null;
+  if(!prof&&!planRow)return false;
+
+  S.user={name:(prof&&prof.name)||(SB.user.user_metadata&&SB.user.user_metadata.name)||SB.user.email.split('@')[0],email:SB.user.email,provider:'supabase'};
+  if(prof){
+    if(prof.goal_key)S.goalKey=prof.goal_key;
+    if(prof.answers)S.answers=Object.assign({},S.answers,prof.answers);
+    const t=prof.tracking||{};
+    if(t.current!=null)S.current=t.current;
+    if(t.weightLog)S.weightLog=t.weightLog;
+    if(t.streak!=null)S.streak=t.streak;
+    if(t.water!=null)S.water=t.water;
+    if(t.tasks)S.tasks=t.tasks;
+    if(t.badges)S.badges=t.badges;
+    if(t.measures)S.measures=t.measures;
+    if(t.planDay!=null)S.planDay=t.planDay;
+    if(t.foodLog)S.foodLog=t.foodLog;
+    if(prof.food_db)S.foodDB=Object.assign({custom:[],favs:[],recents:[],history:[]},prof.food_db);
+    if(Array.isArray(prof.photos))S.photos=prof.photos;
+  }
+  if(planRow&&planRow.plan){
+    S.plan=planRow.plan;
+    S.mealPlan=(planRow.meal_plan&&planRow.meal_plan.length)?planRow.meal_plan:buildMealPlan(S.plan);
+    S.week=(planRow.week&&planRow.week.length)?planRow.week:buildWeek(S.plan,S.answers);
+  }
+  /* tabelas normalizadas têm prioridade quando existirem */
+  let wl=await sbTry(()=>SB.client.from('weight_logs').select('weight,logged_at').eq('user_id',uid).order('logged_at',{ascending:true}),'select weight_logs');
+  if(wl&&wl.length){
+    S.weightLog=wl.map((r,i)=>({label:i===wl.length-1?'Hoje':new Date(r.logged_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}),v:Number(r.weight)}));
+    S.current=Number(wl[wl.length-1].weight);
+  }
+  const wat=await sbTry(()=>SB.client.from('water_logs').select('glasses,log_date').eq('user_id',uid).eq('log_date',todayISO()).maybeSingle(),'select water_logs');
+  if(wat&&wat.glasses!=null)S.water=wat.glasses;
+  if(!S.plan)return false;
+  if(S.current==null)S.current=S.plan.startWeight;
+  if(!S.mealPlan||!S.mealPlan.length)S.mealPlan=buildMealPlan(S.plan);
+  if(!S.week||!S.week.length)S.week=buildWeek(S.plan,S.answers);
+  return true;
+}
+async function cloudPushAll(){await cloudPushProfile();await cloudPushPlan();}
 let _saveT=null;
 function saveSession(){if(!S.user)return;clearTimeout(_saveT);_saveT=setTimeout(doSave,450);}
 async function doSave(){
@@ -880,6 +1083,7 @@ async function doSave(){
     tracking:{current:S.current,weightLog:S.weightLog,streak:S.streak,water:S.water,tasks:S.tasks,badges:S.badges,measures:S.measures,planDay:S.planDay,
       foodLog:S.foodLog.map(f=>Object.assign({},f,{url:null}))}};
   await STORE.set(SESSION_KEY,JSON.stringify(data));
+  if(cloudOn())cloudPushAll();
 }
 async function loadSession(){
   const raw=await STORE.get(SESSION_KEY); if(!raw)return false;
@@ -976,6 +1180,7 @@ function renderWelcome(){
       <p class="hero-sub">Seu programa completo de nutrição e treinos, montado sob medida para o seu corpo, sua rotina e o seu objetivo. Dieta, treino e acompanhamento — o caminho inteiro até o resultado, com inteligência artificial.</p>
       <div class="hero-cta">
         <button class="btn btn-volt lg" data-action="start">Montar meu plano ${ic('arrowR',18)}</button>
+        ${supaConfigured()?`<button class="btn btn-ghost-light lg" data-action="go-login">Já tenho conta</button>`:''}
         <small>Leva cerca de 2 minutos</small>
       </div>
       <div class="hero-feats">
@@ -1110,9 +1315,11 @@ function renderAccount(){
       <button class="google-btn" data-action="google-signin">${googleLogo(19)} Continuar com Google</button>
       <div class="auth-or"><span>ou</span></div>
       <div class="field" style="margin-bottom:12px"><label>Seu nome</label><input class="inp" id="auth-name" placeholder="Como quer ser chamado" value="${S.answers.name||''}"></div>
-      <div class="field" style="margin-bottom:16px"><label>E-mail</label><input class="inp" id="auth-email" type="email" placeholder="voce@email.com"></div>
+      <div class="field" style="margin-bottom:12px"><label>E-mail</label><input class="inp" id="auth-email" type="email" placeholder="voce@email.com"></div>
+      ${supaConfigured()?`<div class="field" style="margin-bottom:16px"><label>Senha</label><input class="inp" id="auth-pass" type="password" placeholder="Mínimo de 6 caracteres" autocomplete="new-password"></div>`:''}
       <button class="btn btn-primary lg" style="width:100%" data-action="email-signup">Criar conta e salvar plano ${ic('arrowR',18)}</button>
-      <p class="auth-disc">Protótipo — login demonstrativo. Seus dados são salvos no armazenamento do app (${STORE.kind}).</p>
+      ${supaConfigured()?`<button class="btn btn-secondary lg" style="width:100%;margin-top:10px" data-action="go-login">Já tenho conta — entrar</button>`:''}
+      <p class="auth-disc">${supaConfigured()?'Sua conta e seu progresso ficam salvos na sua conta Supabase e sincronizam entre aparelhos.':`Protótipo — login demonstrativo. Seus dados são salvos no armazenamento do app (${STORE.kind}).`}</p>
     </div></div>
   </div>`);
 }
@@ -1131,6 +1338,20 @@ function modalGoogle(){
   </div>`;
 }
 function validEmail(v){return /.+@.+\..+/.test((v||'').trim());}
+async function doSignup(btn){
+  const name=($('#auth-name')&&$('#auth-name').value.trim())||'';
+  const email=($('#auth-email')&&$('#auth-email').value.trim())||'';
+  if(!validEmail(email)){if($('#auth-email'))$('#auth-email').style.borderColor='var(--ember)';toast('Informe um e-mail válido.','x');return;}
+  if(!supaConfigured())return finalizeAccount({name:name||email.split('@')[0],email,provider:'email'});
+  const pass=($('#auth-pass')&&$('#auth-pass').value)||'';
+  if(pass.length<6){if($('#auth-pass'))$('#auth-pass').style.borderColor='var(--ember)';toast('A senha precisa ter ao menos 6 caracteres.','x');return;}
+  if(btn){btn.disabled=true;btn.textContent='Criando conta...';}
+  const r=await cloudSignUp(email,pass,name);
+  if(btn)btn.disabled=false;
+  if(!r.ok){toast(r.msg,r.pending?'info':'x');if(r.pending){S.screen='login';}render();if(isNetErr(r.msg))showCloudError();return;}
+  finalizeAccount({name:name||email.split('@')[0],email,provider:'supabase'});
+  cloudPushAll();
+}
 function isLocalFile(){try{return !/^https?:$/.test(location.protocol);}catch(e){return false;}}
 function finalizeAccount(user){
   S.user=user;
@@ -1142,15 +1363,19 @@ function finalizeAccount(user){
 }
 function renderLogin(){
   const u=S.user||{}; const first=(u.name||'').trim().split(' ')[0];
+  const cloud=supaConfigured();
   mount(`<div class="onb">
     <div class="onb-nav"><div class="brand"><span class="brand-mark">${ic('zap',18)}</span> NutriCoach AI</div></div>
     <div class="onb-body"><div class="onb-card auth-card" style="text-align:center">
       <div class="login-avatar">${u.provider==='google'?googleLogo(24):esc((u.name||'U').trim().charAt(0).toUpperCase()||'U')}</div>
-      <h2 class="onb-title" style="text-align:center">Bem-vindo de volta${first?', '+esc(first):''}!</h2>
-      <p class="section-lead" style="text-align:center;margin:8px auto 22px">Sua conta e todo o seu progresso continuam salvos — dieta, treinos, peso e medidas. Entre para retomar de onde parou.</p>
+      <h2 class="onb-title" style="text-align:center">${first?'Bem-vindo de volta, '+esc(first)+'!':'Entrar na sua conta'}</h2>
+      <p class="section-lead" style="text-align:center;margin:8px auto 22px">Seu progresso continua salvo — dieta, treinos, peso e medidas. Entre para retomar de onde parou.</p>
+      ${cloud?`
+      <div class="field" style="margin-bottom:12px;text-align:left"><label>E-mail</label><input class="inp" id="login-email" type="email" placeholder="voce@email.com" value="${esc(u.email||'')}" autocomplete="email"></div>
+      <div class="field" style="margin-bottom:16px;text-align:left"><label>Senha</label><input class="inp" id="login-pass" type="password" placeholder="Sua senha" autocomplete="current-password"></div>`:''}
       <button class="btn btn-primary lg" style="width:100%" data-action="login">Entrar na minha conta ${ic('arrowR',18)}</button>
       <button class="btn btn-secondary lg" style="width:100%;margin-top:10px" data-action="new-account">Criar uma nova conta</button>
-      ${u.email?`<p class="auth-disc">${esc(u.email)}</p>`:''}
+      ${!cloud&&u.email?`<p class="auth-disc">${esc(u.email)}</p>`:''}
     </div></div>
   </div>`);
 }
@@ -1161,17 +1386,39 @@ function modalConfirmReset(){
    <div class="modal-actions"><button class="btn btn-secondary" data-action="modal-close">Cancelar</button><button class="btn btn-primary" data-action="reset-confirm">Apagar e recomeçar</button></div>
    </div></div>`;
 }
-function login(){
+async function login(btn){
+  if(supaConfigured()){
+    const email=($('#login-email')&&$('#login-email').value.trim())||'';
+    const pass=($('#login-pass')&&$('#login-pass').value)||'';
+    if(!validEmail(email)){toast('Informe um e-mail válido.','x');return;}
+    if(!pass){toast('Informe sua senha.','x');return;}
+    if(btn){btn.disabled=true;btn.textContent='Entrando...';}
+    const r=await cloudSignIn(email,pass);
+    if(btn){btn.disabled=false;}
+    if(!r.ok){toast(r.msg,'x');if(btn)render();if(isNetErr(r.msg))showCloudError();return;}
+    const got=await cloudPull();
+    if(!got&&!S.plan){toast('Conta ok! Monte seu plano para começar.','info');closeModal();setAuthed(true);S.screen='welcome';render();return;}
+    await doSave();
+  }
   closeModal(); setAuthed(true);
   S.screen='app'; S.tab='home'; render();
   toast('Bem-vindo de volta!','checkCircle');
 }
 async function signout(){
   setAuthed(false);
+  await cloudSignOut();
   closeModal();
   S.screen='login'; render();
 }
 async function resetAccount(){
+  if(cloudOn()){
+    const uid=SB.user.id;
+    await sbTry(()=>SB.client.from('user_plans').delete().eq('user_id',uid),'delete user_plans');
+    await sbTry(()=>SB.client.from('weight_logs').delete().eq('user_id',uid),'delete weight_logs');
+    await sbTry(()=>SB.client.from('water_logs').delete().eq('user_id',uid),'delete water_logs');
+    await sbTry(()=>SB.client.from('profiles').delete().eq('id',uid),'delete profiles');
+  }
+  await cloudSignOut();
   await STORE.del(SESSION_KEY); await STORE.del(AUTH_KEY);
   resetState(); closeModal(); render();
 }
@@ -1949,6 +2196,7 @@ function addWeight(){
   const inp=$('#weight-input'); if(!inp)return;
   const v=parseFloat(inp.value); if(!v)return;
   S.current=v; S.weightLog.push({label:'Hoje',v});
+  cloudLogWeight(v);
   if(!S.badges.includes('primeiro_peso')){S.badges.push('primeiro_peso');toast('Conquista: Primeiro registro de peso!','trophy');}
   else toast('Peso registrado com sucesso.','scale');
   rerenderTab();
@@ -1963,15 +2211,23 @@ function toggleTask(k){
 }
 function addWater(){
   S.water++;
+  cloudLogWater(S.water);
   if(S.water>=Math.ceil(S.plan.water*4)){S.tasks.agua=true;toast('Meta de água batida!','droplet');}
   rerenderTab();
 }
 function triggerPhoto(){$('#photo-input').click();}
 function onPhoto(file){
   const url=URL.createObjectURL(file);
-  S.photos.unshift({url,date:new Date().toLocaleDateString('pt-BR')});
+  const item={url,date:new Date().toLocaleDateString('pt-BR')};
+  S.photos.unshift(item);
   if(!S.badges.includes('primeira_foto')){S.badges.push('primeira_foto');toast('Conquista: Primeira foto de progresso!','camera');}
   rerenderTab();
+  if(cloudOn()){
+    cloudUploadPhoto(file).then(pub=>{
+      if(pub){item.url=pub;saveSession();rerenderTab();toast('Foto salva na nuvem.','check');}
+      else toast('Foto salva só neste aparelho (falha no upload).','info');
+    });
+  }
 }
 
 document.addEventListener('click',e=>{
@@ -2035,13 +2291,10 @@ document.addEventListener('click',e=>{
     if(!validEmail(email)){if($('#g-email'))$('#g-email').style.borderColor='var(--ember)';return;}
     return finalizeAccount({name:name||email.split('@')[0],email,provider:'google'});
   }
-  if(act==='email-signup'){
-    const name=($('#auth-name')&&$('#auth-name').value.trim())||'', email=($('#auth-email')&&$('#auth-email').value.trim())||'';
-    if(!validEmail(email)){if($('#auth-email'))$('#auth-email').style.borderColor='var(--ember)';toast('Informe um e-mail válido.','x');return;}
-    return finalizeAccount({name:name||email.split('@')[0],email,provider:'email'});
-  }
+  if(act==='email-signup'){return doSignup(t);}
+  if(act==='go-login'){S.screen='login';return render();}
   if(act==='signout'){return signout();}
-  if(act==='login'){return login();}
+  if(act==='login'){return login(t);}
   if(act==='new-account'){return openModal(modalConfirmReset());}
   if(act==='reset-confirm'){return resetAccount();}
   // ----- DIETA editável -----
@@ -2095,13 +2348,23 @@ $('#meal-photo-input').addEventListener('change',e=>{if(e.target.files[0]){analy
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').classList.contains('show'))closeModal();});
 
 (async()=>{
-  const ok=await loadSession();
-  if(ok){
-    const a=await STORE.get(AUTH_KEY);
-    S.screen=(a==='0')?'login':'app';
-    S.tab='home';
-  }
+  const local=await loadSession();
+  const authFlag=await STORE.get(AUTH_KEY);
+  if(local){S.screen=(authFlag==='0')?'login':'app';S.tab='home';}
   render();
+  if(!supaConfigured())return;
+  const restored=await cloudRestore();
+  if(!restored){
+    if(local&&authFlag!=='0'){S.screen='login';render();}
+    return;
+  }
+  const got=await cloudPull();
+  if(got){
+    await STORE.set(SESSION_KEY,JSON.stringify({user:S.user,goalKey:S.goalKey,answers:S.answers,plan:S.plan,mealPlan:S.mealPlan,week:S.week,foodDB:S.foodDB,
+      tracking:{current:S.current,weightLog:S.weightLog,streak:S.streak,water:S.water,tasks:S.tasks,badges:S.badges,measures:S.measures,planDay:S.planDay,foodLog:S.foodLog}}));
+    if(authFlag!=='0'){S.screen='app';S.tab='home';}
+    render();
+  }
 })();
 
 </script>

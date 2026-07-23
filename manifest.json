@@ -1,0 +1,16 @@
+{
+  "name": "NutriCoach AI",
+  "short_name": "NutriCoach AI",
+  "description": "Seu coach de nutrição e treinos com inteligência artificial. Plano alimentar e treinos personalizados e editáveis, com acompanhamento de peso, medidas e progresso.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14161C",
+  "theme_color": "#14161C",
+  "categories": ["health", "fitness", "lifestyle"],
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
